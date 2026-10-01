@@ -11,7 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Kaynak kodu al
         uses: actions/checkout@v4
@@ -31,139 +30,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          ZIP="$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)"
-
-          if [ -z "$ZIP" ]; then
-            echo "HATA: Proje ZIP'i bulunamadı."
-            exit 1
-          fi
-
-          echo "Kullanılan ZIP: $ZIP"
-
+          ZIP="./GolkoyHaber_PROJE_FINAL.zip"
+          test -f "$ZIP" || { echo "HATA: $ZIP bulunamadı."; exit 1; }
           rm -rf /tmp/golkoy_extract /tmp/golkoy_project
           mkdir -p /tmp/golkoy_extract /tmp/golkoy_project
-
           unzip -q -o "$ZIP" -d /tmp/golkoy_extract
-
-          SETTINGS="$(find /tmp/golkoy_extract -type f \( \
-            -name 'settings.gradle.kts' -o \
-            -name 'settings.gradle' \
-          \) -print -quit)"
-
-          if [ -z "$SETTINGS" ]; then
-            echo "HATA: settings.gradle(.kts) bulunamadı."
-            exit 1
-          fi
-
+          SETTINGS="$(find /tmp/golkoy_extract -type f \( -name 'settings.gradle.kts' -o -name 'settings.gradle' \) -print -quit)"
+          test -n "$SETTINGS" || { echo "HATA: settings.gradle(.kts) bulunamadı."; exit 1; }
           PROJECT_DIR="$(dirname "$SETTINGS")"
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "HATA: app/build.gradle(.kts) bulunamadı."
-            exit 1
-          fi
-
+          test -f "$PROJECT_DIR/app/build.gradle.kts" -o -f "$PROJECT_DIR/app/build.gradle" || { echo "HATA: app/build.gradle(.kts) bulunamadı."; exit 1; }
           cp -a "$PROJECT_DIR/." /tmp/golkoy_project/
-
           echo "PROJECT_DIR=/tmp/golkoy_project" >> "$GITHUB_ENV"
-
-      - name: JVM hedeflerini 17 olarak zorla
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          FILE="$PROJECT_DIR/app/build.gradle.kts"
-
-          echo "Düzeltilen dosya:"
-          echo "$FILE"
-
-          python3 - "$FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
-
-          # Eski Java 1.8 ayarlarını 17 yap.
-          text = text.replace(
-              "sourceCompatibility = JavaVersion.VERSION_1_8",
-              "sourceCompatibility = JavaVersion.VERSION_17"
-          )
-          text = text.replace(
-              "targetCompatibility = JavaVersion.VERSION_1_8",
-              "targetCompatibility = JavaVersion.VERSION_17"
-          )
-          text = text.replace(
-              "sourceCompatibility = JavaVersion.VERSION_8",
-              "sourceCompatibility = JavaVersion.VERSION_17"
-          )
-          text = text.replace(
-              "targetCompatibility = JavaVersion.VERSION_8",
-              "targetCompatibility = JavaVersion.VERSION_17"
-          )
-
-          # compileOptions yoksa android bloğuna ekle.
-          if "sourceCompatibility = JavaVersion.VERSION_17" not in text:
-              marker = "android {"
-              addition = """android {
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-          """
-              if marker in text:
-                  text = text.replace(marker, addition, 1)
-
-          # Kotlin jvmTarget'ı mevcutsa 17 yap, yoksa android bloğunun sonuna
-          # güvenli bir Kotlin ayarı ekle.
-          if "jvmTarget = \"17\"" not in text:
-              marker = "android {"
-              if marker in text:
-                  text = text.replace(
-                      marker,
-                      """android {
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          """,
-                      1
-                  )
-
-          path.write_text(text, encoding="utf-8")
-          PY
-
-          echo "===== DÜZELTİLMİŞ build.gradle.kts ====="
-          cat "$FILE"
 
       - name: APK derle
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-
-          echo "Java:"
-          java -version
-
-          echo "Gradle:"
-          gradle --version
-
           gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: APK kontrol
         shell: bash
         run: |
           set -euo pipefail
-
-          APK="$(find "$PROJECT_DIR/app/build/outputs" \
-            -type f -name '*.apk' -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "HATA: APK oluşmadı."
-            exit 1
-          fi
-
-          echo "APK başarıyla oluştu:"
+          APK="$(find "$PROJECT_DIR/app/build/outputs" -type f -name '*.apk' -print -quit)"
+          test -n "$APK" || { echo "HATA: APK oluşmadı."; exit 1; }
           ls -lh "$APK"
 
       - name: APK artifact olarak yükle
